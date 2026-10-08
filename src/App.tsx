@@ -47,6 +47,8 @@ export function App() {
   const [visibility, setVisibility] = useState<Visibility>({ ...defaultVisibility, ...saved.visibility });
   const [theme, setTheme] = useState<ThemeMode>(saved.theme ?? 'system');
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(saved.sidebarOpen ?? !narrow());
+  const [sidebarWidth, setSidebarWidth] = useState<number | null>(saved.sidebarWidth ?? null);
+  const [resizing, setResizing] = useState(false);
   const [tab, setTab] = useState<'sql' | 'objects'>('sql');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
@@ -89,8 +91,51 @@ export function App() {
   }, [sql]);
 
   useEffect(() => {
-    save({ sql, fileName, positions, visibility, theme, sidebarOpen });
-  }, [sql, fileName, positions, visibility, theme, sidebarOpen]);
+    save({ sql, fileName, positions, visibility, theme, sidebarOpen, sidebarWidth });
+  }, [sql, fileName, positions, visibility, theme, sidebarOpen, sidebarWidth]);
+
+  // Límites del panel: mínimo usable y que el lienzo conserve al menos 320px.
+  const clampWidth = useCallback((w: number) => Math.round(Math.min(Math.max(w, 260), Math.max(260, window.innerWidth - 320))), []);
+  const sidebarRef = useRef<HTMLElement>(null);
+
+  const startResize = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const handle = e.currentTarget;
+      handle.setPointerCapture(e.pointerId);
+      const left = sidebarRef.current?.getBoundingClientRect().left ?? 0;
+      setResizing(true);
+      const onMove = (ev: PointerEvent) => setSidebarWidth(clampWidth(ev.clientX - left));
+      const onUp = () => {
+        setResizing(false);
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onUp);
+        handle.removeEventListener('pointercancel', onUp);
+      };
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onUp);
+      handle.addEventListener('pointercancel', onUp);
+    },
+    [clampWidth],
+  );
+
+  const onResizeKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const current = sidebarRef.current?.getBoundingClientRect().width ?? 400;
+    const step = e.shiftKey ? 80 : 20;
+    if (e.key === 'ArrowLeft') setSidebarWidth(clampWidth(current - step));
+    else if (e.key === 'ArrowRight') setSidebarWidth(clampWidth(current + step));
+    else if (e.key === 'Home' || e.key === 'Enter') setSidebarWidth(null);
+    else return;
+    e.preventDefault();
+  };
+
+  // Si la ventana se achica, el panel no debe tapar el lienzo.
+  useEffect(() => {
+    const onResize = () => setSidebarWidth((w) => (w == null ? w : clampWidth(w)));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [clampWidth]);
 
   useEffect(() => {
     if (!toast) return;
@@ -243,8 +288,11 @@ export function App() {
         </div>
       </header>
 
-      <main className={`workspace${sidebarOpen ? '' : ' sidebar-closed'}`}>
-        <aside className="sidebar" aria-hidden={!sidebarOpen}>
+      <main
+        className={`workspace${sidebarOpen ? '' : ' sidebar-closed'}${resizing ? ' is-resizing' : ''}`}
+        style={sidebarWidth ? ({ '--sidebar-w': `${sidebarWidth}px` } as React.CSSProperties) : undefined}
+      >
+        <aside className="sidebar" aria-hidden={!sidebarOpen} ref={sidebarRef}>
           <div className="tabs" role="tablist">
             <button type="button" role="tab" aria-selected={tab === 'sql'} className={`tab${tab === 'sql' ? ' is-active' : ''}`} onClick={() => setTab('sql')}>
               SQL
@@ -292,6 +340,21 @@ export function App() {
             <ObjectList schema={schema} visibility={visibility} onVisibility={setVisibility} selectedId={selectedId} onPick={(id) => pick(id)} onLine={goToLine} />
           </div>
         </aside>
+
+        {sidebarOpen && (
+          <div
+            className="resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Ajustar ancho del panel SQL"
+            aria-valuenow={sidebarWidth ?? undefined}
+            tabIndex={0}
+            title="Arrastra para ajustar el ancho · doble clic para restablecer"
+            onPointerDown={startResize}
+            onDoubleClick={() => setSidebarWidth(null)}
+            onKeyDown={onResizeKey}
+          />
+        )}
 
         <section className="canvas" aria-label="Diagrama">
           <Diagram ref={diagram} schema={schema} visibility={visibility} positions={positions} onPositionsChange={setPositions} selectedId={selectedId} onSelect={setSelectedId} />

@@ -12,6 +12,8 @@ export interface Saved {
   visibility: Visibility;
   theme: ThemeMode;
   sidebarOpen: boolean;
+  /** Ancho del panel SQL en px; null = ancho por defecto. */
+  sidebarWidth: number | null;
 }
 
 export const defaultVisibility: Visibility = { hiddenSchemas: [], showTypes: true, showViews: true, showTypeEdges: true };
@@ -26,18 +28,32 @@ export function load(): Partial<Saved> {
 }
 
 let timer: number | undefined;
-export function save(state: Saved) {
-  window.clearTimeout(timer);
-  timer = window.setTimeout(() => {
+let pending: Saved | undefined;
+
+function write(state: Saved) {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(state));
+  } catch {
+    // Cuota excedida (dumps muy grandes): guardamos sin el SQL.
     try {
-      localStorage.setItem(KEY, JSON.stringify(state));
+      localStorage.setItem(KEY, JSON.stringify({ ...state, sql: '' }));
     } catch {
-      // Cuota excedida (dumps muy grandes): guardamos sin el SQL.
-      try {
-        localStorage.setItem(KEY, JSON.stringify({ ...state, sql: '' }));
-      } catch {
-        /* sin almacenamiento disponible */
-      }
+      /* sin almacenamiento disponible */
     }
-  }, 300);
+  }
+}
+
+function flush() {
+  window.clearTimeout(timer);
+  if (pending) write(pending);
+  pending = undefined;
+}
+
+// Al recargar o cerrar la pestaña se guarda lo pendiente sin esperar el debounce.
+window.addEventListener('pagehide', flush);
+
+export function save(state: Saved) {
+  pending = state;
+  window.clearTimeout(timer);
+  timer = window.setTimeout(flush, 300);
 }
