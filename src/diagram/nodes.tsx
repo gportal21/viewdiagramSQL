@@ -1,6 +1,6 @@
 import { memo, useEffect, useState, type ReactNode } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import type { EntityNode, TableNodeData, TypeNodeData, ViewNodeData } from './build';
+import { shortBound, type EntityNode, type TableNodeData, type TypeNodeData, type ViewNodeData } from './build';
 import type { Column } from '../schema/model';
 
 /** Handles invisibles a ambos lados de cada fila; la arista elige el lado más corto. */
@@ -22,6 +22,9 @@ const KeyIcon = () => (
 );
 const LinkIcon = () => (
   <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.6 9.4l2.8-2.8M7.3 4.6l1-1a2.6 2.6 0 013.7 3.7l-1 1M8.7 11.4l-1 1A2.6 2.6 0 014 8.7l1-1" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+);
+const PartIcon = () => (
+  <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="M2.5 8h11M8 8v5.5" fill="none" stroke="currentColor" strokeWidth="1.4" /></svg>
 );
 const ListIcon = () => (
   <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4.5h7M5.5 8h7M5.5 11.5h7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /><circle cx="3" cy="4.5" r="1" fill="currentColor" /><circle cx="3" cy="8" r="1" fill="currentColor" /><circle cx="3" cy="11.5" r="1" fill="currentColor" /></svg>
@@ -64,7 +67,7 @@ function Header({ color, schema, name, kindLabel, badges }: { color: string; sch
 }
 
 export const TableNode = memo(function TableNode({ data, selected }: NodeProps<EntityNode>) {
-  const { table: t, schemaColor, fkCols, enumValues } = data as TableNodeData;
+  const { table: t, schemaColor, fkCols, enumValues, partitions } = data as TableNodeData;
   const fk = new Set(fkCols);
   // Columna cuyo desplegable de valores del enum está abierto (sólo con la tabla seleccionada).
   const [openEnum, setOpenEnum] = useState<string | null>(null);
@@ -136,6 +139,20 @@ export const TableNode = memo(function TableNode({ data, selected }: NodeProps<E
           );
         })}
       </ul>
+      {partitions?.length > 0 && (
+        <div className="node-foot node-parts">
+          <div className="foot-label">Particiones · {partitions.length}</div>
+          {partitions.map((p) => (
+            <div key={p.key} className="foot-item" style={p.depth ? { paddingLeft: p.depth * 12 } : undefined} title={[`${p.schema}.${p.name}`, p.bound].filter(Boolean).join('\n')}>
+              <span className="ic"><PartIcon /></span>
+              <span className="foot-text">
+                {p.name}
+                {p.bound && <em> · {shortBound(p.bound)}</em>}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       {t.indexes.length > 0 && (
         <div className="node-foot">
           <div className="foot-label">Índices</div>

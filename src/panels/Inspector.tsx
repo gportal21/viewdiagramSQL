@@ -117,6 +117,9 @@ function TableDetail({ t, schema, onPick }: { t: Table; schema: Schema; onPick: 
         <Section title="Estructura">
           <ul className="insp-list">
             {t.partitionBy && <li>Particionada por <Code>{t.partitionBy}</Code></li>}
+            {[...schema.tables.values()].filter((c) => c.partitionOf === t.key).map((c) => (
+              <li key={c.key}>Partición <button type="button" className="link" onClick={() => onPick(nodeId.table(c.key))}>{short(c.key)}</button> <Code>{c.partitionBound}</Code></li>
+            ))}
             {t.partitionOf && <li>Partición de <button type="button" className="link" onClick={() => onPick(nodeId.table(t.partitionOf!))}>{short(t.partitionOf)}</button> <Code>{t.partitionBound}</Code></li>}
             {t.inherits.map((p) => <li key={p}>Hereda de <button type="button" className="link" onClick={() => onPick(nodeId.table(p))}>{short(p)}</button></li>)}
             {t.ofType && <li>Tabla tipada <Code>OF {short(t.ofType)}</Code></li>}
