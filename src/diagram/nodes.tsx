@@ -1,4 +1,4 @@
-import { memo, type ReactNode } from 'react';
+import { memo, useEffect, useState, type ReactNode } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { EntityNode, TableNodeData, TypeNodeData, ViewNodeData } from './build';
 import type { Column } from '../schema/model';
@@ -22,6 +22,9 @@ const KeyIcon = () => (
 );
 const LinkIcon = () => (
   <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.6 9.4l2.8-2.8M7.3 4.6l1-1a2.6 2.6 0 013.7 3.7l-1 1M8.7 11.4l-1 1A2.6 2.6 0 014 8.7l1-1" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+);
+const ListIcon = () => (
+  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4.5h7M5.5 8h7M5.5 11.5h7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /><circle cx="3" cy="4.5" r="1" fill="currentColor" /><circle cx="3" cy="8" r="1" fill="currentColor" /><circle cx="3" cy="11.5" r="1" fill="currentColor" /></svg>
 );
 const UniqueIcon = () => (
   <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5l5 5.5-5 5.5L3 8z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>
@@ -61,8 +64,13 @@ function Header({ color, schema, name, kindLabel, badges }: { color: string; sch
 }
 
 export const TableNode = memo(function TableNode({ data, selected }: NodeProps<EntityNode>) {
-  const { table: t, schemaColor, fkCols } = data as TableNodeData;
+  const { table: t, schemaColor, fkCols, enumValues } = data as TableNodeData;
   const fk = new Set(fkCols);
+  // Columna cuyo desplegable de valores del enum está abierto (sólo con la tabla seleccionada).
+  const [openEnum, setOpenEnum] = useState<string | null>(null);
+  useEffect(() => {
+    if (!selected) setOpenEnum(null);
+  }, [selected]);
   const badges: ReactNode[] = [];
   if (t.persistence === 'unlogged') badges.push(<span key="u" className="badge">UNLOGGED</span>);
   if (t.persistence === 'temporary') badges.push(<span key="t" className="badge">TEMP</span>);
@@ -76,8 +84,11 @@ export const TableNode = memo(function TableNode({ data, selected }: NodeProps<E
       <Header color={schemaColor} schema={t.schema} name={t.name} badges={badges.length ? badges : undefined} />
       <ul className="rows">
         {t.columns.length === 0 && <li className="row row-empty">sin columnas</li>}
-        {t.columns.map((c) => (
-          <li key={c.name} className={`row${c.inherited ? ' is-inherited' : ''}`} title={columnTitle(c)}>
+        {t.columns.map((c) => {
+          const en = enumValues?.[c.name];
+          const open = !!en && selected && openEnum === c.name;
+          return (
+          <li key={c.name} className={`row${c.inherited ? ' is-inherited' : ''}${en ? ' is-enum' : ''}${open ? ' is-open' : ''}`} title={columnTitle(c)}>
             <SideHandles id={c.name} />
             <span className="row-icon">
               {c.primaryKey ? (
@@ -93,8 +104,37 @@ export const TableNode = memo(function TableNode({ data, selected }: NodeProps<E
               {c.type}
               {c.nullable && !c.primaryKey && <span className="nullable">?</span>}
             </span>
+            {en && selected && (
+              <button
+                type="button"
+                className="enum-btn nodrag nopan"
+                aria-expanded={open}
+                aria-label={`Ver valores de ${en.type}`}
+                title={`Ver valores de ${en.type}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenEnum(open ? null : c.name);
+                }}
+              >
+                <ListIcon />
+              </button>
+            )}
+            {open && (
+              <div className="enum-pop nodrag nopan nowheel" role="dialog" aria-label={`Valores de ${en.type}`} onClick={(e) => e.stopPropagation()}>
+                <div className="enum-pop-head">
+                  <span className="enum-pop-kind">enum</span> {en.type}
+                  <span className="enum-pop-count">{en.values.length}</span>
+                </div>
+                <ol className="enum-pop-list">
+                  {en.values.map((v) => (
+                    <li key={v}>'{v}'</li>
+                  ))}
+                </ol>
+              </div>
+            )}
           </li>
-        ))}
+          );
+        })}
       </ul>
       {t.indexes.length > 0 && (
         <div className="node-foot">

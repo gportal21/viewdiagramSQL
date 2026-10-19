@@ -5,7 +5,7 @@ import { buildGraph, estimateSize } from './build';
 import { autoLayout } from './layout';
 
 const sample = readFileSync(new URL('../sample.sql', import.meta.url), 'utf8');
-const vis = { hiddenSchemas: [], showTypes: true, showViews: true, showTypeEdges: true };
+const vis = { hiddenSchemas: [], showTypes: true, showEnums: true, showViews: true, showTypeEdges: true };
 
 describe('autoLayout', () => {
   it('coloca los tipos junto a sus tablas sin solapar nada', async () => {

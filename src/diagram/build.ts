@@ -4,11 +4,21 @@ import type { Schema, Table, TypeLike, View } from '../schema/model';
 export interface Visibility {
   hiddenSchemas: string[];
   showTypes: boolean;
+  /** Enums como nodos propios; si no, sólo se ven sus valores desde la columna. */
+  showEnums: boolean;
   showViews: boolean;
   showTypeEdges: boolean;
 }
 
-export type TableNodeData = { kind: 'table'; table: Table; schemaColor: string; fkCols: string[]; typedCols: string[] };
+export type TableNodeData = {
+  kind: 'table';
+  table: Table;
+  schemaColor: string;
+  fkCols: string[];
+  typedCols: string[];
+  /** Valores posibles de cada columna cuyo tipo es un enum (por nombre de columna). */
+  enumValues: Record<string, { type: string; values: string[] }>;
+};
 export type TypeNodeData = { kind: 'type'; type: TypeLike; schemaColor: string };
 export type ViewNodeData = { kind: 'view'; view: View; schemaColor: string };
 export type EntityData = TableNodeData | TypeNodeData | ViewNodeData;
@@ -63,12 +73,13 @@ export function buildGraph(schema: Schema, vis: Visibility): { nodes: EntityNode
         schemaColor: schemaColor(schema.schemas, t.schema),
         fkCols: t.foreignKeys.flatMap((f) => f.columns),
         typedCols: t.columns.filter((c) => c.typeKey).map((c) => c.name),
+        enumValues: enumValuesOf(t, schema),
       },
     });
   }
   if (vis.showTypes) {
     for (const ty of schema.types.values()) {
-      if (hidden.has(ty.schema)) continue;
+      if (hidden.has(ty.schema) || (ty.kind === 'enum' && !vis.showEnums)) continue;
       const id = nodeId.type(ty.key);
       present.add(id);
       nodes.push({ id, type: 'type', position: { x: 0, y: 0 }, data: { kind: 'type', type: ty, schemaColor: schemaColor(schema.schemas, ty.schema) } });
@@ -170,6 +181,17 @@ export function buildGraph(schema: Schema, vis: Visibility): { nodes: EntityNode
   }
 
   return { nodes, edges };
+}
+
+/** Columnas de `t` cuyo tipo es un enum, directamente o a través de un dominio. */
+function enumValuesOf(t: Table, schema: Schema): TableNodeData['enumValues'] {
+  const out: TableNodeData['enumValues'] = {};
+  for (const c of t.columns) {
+    let ty = c.typeKey ? schema.types.get(c.typeKey) : undefined;
+    for (let i = 0; ty?.kind === 'domain' && ty.baseTypeKey && i < 8; i++) ty = schema.types.get(ty.baseTypeKey);
+    if (ty?.kind === 'enum') out[c.name] = { type: ty.schema === 'public' ? ty.name : `${ty.schema}.${ty.name}`, values: ty.values };
+  }
+  return out;
 }
 
 // ───── tamaños estimados (para el layout antes de medir el DOM) ─────

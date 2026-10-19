@@ -16,7 +16,7 @@ export interface Saved {
   sidebarWidth: number | null;
 }
 
-export const defaultVisibility: Visibility = { hiddenSchemas: [], showTypes: true, showViews: true, showTypeEdges: true };
+export const defaultVisibility: Visibility = { hiddenSchemas: [], showTypes: true, showEnums: false, showViews: true, showTypeEdges: true };
 
 export function load(): Partial<Saved> {
   try {
