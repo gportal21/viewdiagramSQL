@@ -177,6 +177,23 @@ export function buildGraph(schema: Schema, vis: Visibility): { nodes: EntityNode
 const CHAR = 7.4; // px por carácter en IBM Plex Mono 12.5px aprox.
 const ROW = 26;
 const HEADER = 40;
+/** Relleno superior de la lista de filas (`.rows { padding: 4px 0 }`). */
+const ROWS_PAD = 4;
+
+/**
+ * Centro vertical estimado de la fila `col`, relativo al borde superior del
+ * nodo. Sin columna (o si no existe) devuelve el centro de la cabecera.
+ */
+export function rowOffset(n: EntityNode, col?: string): number {
+  const d = n.data;
+  const names =
+    d.kind === 'table' ? d.table.columns.map((c) => c.name)
+    : d.kind === 'type' && d.type.kind === 'composite' ? d.type.fields.map((f) => f.name)
+    : [];
+  const rowH = d.kind === 'table' ? ROW : 24;
+  const i = col ? names.indexOf(col) : -1;
+  return i < 0 ? HEADER / 2 : HEADER + ROWS_PAD + i * rowH + rowH / 2;
+}
 
 export function estimateSize(n: EntityNode): { width: number; height: number } {
   const d = n.data;
