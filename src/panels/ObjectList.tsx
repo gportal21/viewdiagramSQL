@@ -94,6 +94,7 @@ export function ObjectList({ schema, visibility, onVisibility, selectedId, onPic
         )}
         <div className="toggles">
           <label><input id="show-types" type="checkbox" checked={visibility.showTypes} onChange={(e) => onVisibility({ ...visibility, showTypes: e.target.checked })} /> Tipos en el diagrama</label>
+          <label><input id="show-enums" type="checkbox" checked={visibility.showEnums} disabled={!visibility.showTypes} onChange={(e) => onVisibility({ ...visibility, showEnums: e.target.checked })} /> Enums como nodos</label>
           <label><input id="show-type-edges" type="checkbox" checked={visibility.showTypeEdges} disabled={!visibility.showTypes} onChange={(e) => onVisibility({ ...visibility, showTypeEdges: e.target.checked })} /> Conectar columnas con sus tipos</label>
           <label><input id="show-views" type="checkbox" checked={visibility.showViews} onChange={(e) => onVisibility({ ...visibility, showViews: e.target.checked })} /> Vistas</label>
         </div>
