@@ -23,13 +23,32 @@ const sizeOf = (n: EntityNode): Size =>
  * 2. Tipos (enums, dominios, compuestos…) junto a las tablas que los usan,
  *    en el hueco libre más cercano (ver `placeTypes`). Si entraran en ELK,
  *    cada tipo añadiría una capa y el diagrama se estiraría en horizontal.
+ *
+ * Las particiones dibujadas como nodos van apiladas debajo de su tabla madre:
+ * para ELK, madre y particiones son un único bloque (ver `partitionGroups`).
  */
 export async function autoLayout(nodes: EntityNode[], edges: RelEdge[]): Promise<Positions> {
   if (!nodes.length) return {};
-  const main = nodes.filter((n) => n.data.kind !== 'type');
+  const sizes = new Map(nodes.map((n) => [n.id, sizeOf(n)]));
+  const { rootOf, groups } = partitionGroups(nodes);
+  const main = nodes.filter((n) => n.data.kind !== 'type' && !rootOf.has(n.id));
   const types = nodes.filter((n) => n.data.kind === 'type');
   const ids = new Set(main.map((n) => n.id));
-  const sizes = new Map(nodes.map((n) => [n.id, sizeOf(n)]));
+  // Tamaño del bloque madre + particiones apiladas.
+  const blockSize = (id: string): Size => {
+    const s = sizes.get(id)!;
+    const g = groups.get(id);
+    if (!g) return s;
+    let width = s.width;
+    let height = s.height;
+    for (const { id: c, depth } of g) {
+      const cs = sizes.get(c)!;
+      width = Math.max(width, PART_INDENT * depth + cs.width);
+      height += PART_GAP + cs.height;
+    }
+    return { width, height };
+  };
+  const end = (id: string) => rootOf.get(id) ?? id;
 
   const out: Positions = {};
   if (main.length) {
@@ -46,19 +65,67 @@ export async function autoLayout(nodes: EntityNode[], edges: RelEdge[]): Promise
         'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
         'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
         'elk.aspectRatio': '1.7',
+        'elk.layered.compaction.connectedComponents': 'true',
       },
-      children: main.map((n) => ({ id: n.id, ...sizes.get(n.id)! })),
+      children: main.map((n) => ({ id: n.id, ...blockSize(n.id) })),
       // Invertimos la dirección: la tabla referenciada (padre) va a la izquierda.
+      // Las aristas de una partición cuentan como de su bloque.
       edges: edges
-        .filter((e) => e.data?.rel !== 'type' && e.source !== e.target && ids.has(e.source) && ids.has(e.target))
-        .map((e) => ({ id: e.id, sources: [e.target], targets: [e.source] })),
+        .filter((e) => e.data?.rel !== 'type' && end(e.source) !== end(e.target) && ids.has(end(e.source)) && ids.has(end(e.target)))
+        .map((e) => ({ id: e.id, sources: [end(e.target)], targets: [end(e.source)] })),
     };
     const elk = await getElk();
     const res = await elk.layout(graph);
     for (const c of res.children ?? []) out[c.id] = { x: Math.round(c.x ?? 0), y: Math.round(c.y ?? 0) };
+    // Particiones: en columna bajo su madre, sangradas según el nivel.
+    for (const [root, g] of groups) {
+      const p = out[root];
+      if (!p) continue;
+      let y = p.y + sizes.get(root)!.height;
+      for (const { id, depth } of g) {
+        y += PART_GAP;
+        out[id] = { x: p.x + PART_INDENT * depth, y };
+        y += sizes.get(id)!.height;
+      }
+    }
   }
   Object.assign(out, placeTypes(nodes, types, edges, out, sizes));
   return out;
+}
+
+const PART_GAP = 18; // separación vertical entre particiones apiladas
+const PART_INDENT = 24; // sangría de cada nivel de partición
+
+/**
+ * Agrupa cada tabla particionada con sus particiones (y sub-particiones)
+ * visibles: `groups` da, por tabla raíz, sus descendientes en orden con su
+ * nivel; `rootOf` lleva de cada partición a su raíz.
+ */
+function partitionGroups(nodes: EntityNode[]) {
+  const byKey = new Map<string, EntityNode>();
+  for (const n of nodes) if (n.data.kind === 'table') byKey.set(n.data.table.key, n);
+  const kids = new Map<string, EntityNode[]>();
+  for (const n of byKey.values()) {
+    const parent = n.data.kind === 'table' ? n.data.table.partitionOf : undefined;
+    if (parent && byKey.has(parent)) kids.set(parent, [...(kids.get(parent) ?? []), n]);
+  }
+  const rootOf = new Map<string, string>();
+  const groups = new Map<string, { id: string; depth: number }[]>();
+  for (const n of byKey.values()) {
+    const parent = n.data.kind === 'table' ? n.data.table.partitionOf : undefined;
+    if ((parent && byKey.has(parent)) || !kids.has(n.data.kind === 'table' ? n.data.table.key : '')) continue;
+    const list: { id: string; depth: number }[] = [];
+    const walk = (key: string, depth: number) => {
+      for (const c of kids.get(key) ?? []) {
+        list.push({ id: c.id, depth });
+        rootOf.set(c.id, n.id);
+        if (c.data.kind === 'table') walk(c.data.table.key, depth + 1);
+      }
+    };
+    walk(n.data.kind === 'table' ? n.data.table.key : '', 1);
+    groups.set(n.id, list);
+  }
+  return { rootOf, groups };
 }
 
 const GAP = 28; // separación mínima entre un tipo y cualquier otro nodo

@@ -6,6 +6,8 @@ export interface Visibility {
   showTypes: boolean;
   /** Enums como nodos propios; si no, sólo se ven sus valores desde la columna. */
   showEnums: boolean;
+  /** Particiones como nodos propios; si no, se listan dentro de su tabla madre. */
+  showPartitions: boolean;
   showViews: boolean;
   showTypeEdges: boolean;
 }
@@ -18,7 +20,18 @@ export type TableNodeData = {
   typedCols: string[];
   /** Valores posibles de cada columna cuyo tipo es un enum (por nombre de columna). */
   enumValues: Record<string, { type: string; values: string[] }>;
+  /** Particiones contraídas dentro de esta tabla (vacío si se dibujan como nodos). */
+  partitions: PartitionItem[];
 };
+export interface PartitionItem {
+  key: string;
+  name: string;
+  schema: string;
+  /** Límites tal cual (`FOR VALUES FROM (...) TO (...)`). */
+  bound?: string;
+  /** Nivel de anidación (sub-particiones). */
+  depth: number;
+}
 export type TypeNodeData = { kind: 'type'; type: TypeLike; schemaColor: string };
 export type ViewNodeData = { kind: 'view'; view: View; schemaColor: string };
 export type EntityData = TableNodeData | TypeNodeData | ViewNodeData;
@@ -59,8 +72,24 @@ export function buildGraph(schema: Schema, vis: Visibility): { nodes: EntityNode
   const edges: RelEdge[] = [];
   const present = new Set<string>();
 
+  // Hijas de cada tabla particionada.
+  const children = new Map<string, Table[]>();
   for (const t of schema.tables.values()) {
-    if (hidden.has(t.schema)) continue;
+    if (t.partitionOf) children.set(t.partitionOf, [...(children.get(t.partitionOf) ?? []), t]);
+  }
+  const visible = (key: string) => {
+    const t = schema.tables.get(key);
+    return !!t && !hidden.has(t.schema);
+  };
+  // Contraída: no se dibuja; aparece en la lista de su tabla madre (si ésta se ve).
+  const collapsed = (t: Table) => !vis.showPartitions && !!t.partitionOf && visible(t.partitionOf) && !hidden.has(t.schema);
+  const partitionsOf = (key: string, depth = 0): PartitionItem[] =>
+    (children.get(key) ?? [])
+      .filter(collapsed)
+      .flatMap((c) => [{ key: c.key, name: c.name, schema: c.schema, bound: c.partitionBound, depth }, ...partitionsOf(c.key, depth + 1)]);
+
+  for (const t of schema.tables.values()) {
+    if (hidden.has(t.schema) || collapsed(t)) continue;
     const id = nodeId.table(t.key);
     present.add(id);
     nodes.push({
@@ -74,6 +103,7 @@ export function buildGraph(schema: Schema, vis: Visibility): { nodes: EntityNode
         fkCols: t.foreignKeys.flatMap((f) => f.columns),
         typedCols: t.columns.filter((c) => c.typeKey).map((c) => c.name),
         enumValues: enumValuesOf(t, schema),
+        partitions: partitionsOf(t.key),
       },
     });
   }
@@ -194,6 +224,19 @@ function enumValuesOf(t: Table, schema: Schema): TableNodeData['enumValues'] {
   return out;
 }
 
+/**
+ * Límites de una partición en corto: `FROM ('2026-10-01 00:00:00+00') TO ('2026-11-01 …')`
+ * → `2026-10-01 → 2026-11-01`; `IN ('a', 'b')` → `IN ('a', 'b')`; `DEFAULT` → `DEFAULT`.
+ */
+export function shortBound(bound?: string): string {
+  if (!bound) return '';
+  const b = bound.replace(/^FOR VALUES\s+/i, '').trim();
+  const clean = (v: string) => v.replace(/^'(.*)'$/, '$1').replace(/ 00:00:00(\+00|\+00:00|Z)?$/, '');
+  const m = /^FROM\s*\((.*)\)\s*TO\s*\((.*)\)$/i.exec(b);
+  if (m) return `${clean(m[1].trim())} → ${clean(m[2].trim())}`;
+  return b;
+}
+
 // ───── tamaños estimados (para el layout antes de medir el DOM) ─────
 
 const CHAR = 7.4; // px por carácter en IBM Plex Mono 12.5px aprox.
@@ -223,7 +266,8 @@ export function estimateSize(n: EntityNode): { width: number; height: number } {
     const rows = d.table.columns.map((c) => c.name.length + c.type.length + 6);
     const title = d.table.name.length + (d.table.schema !== 'public' ? d.table.schema.length + 1 : 0) + 6;
     const w = Math.max(title, ...rows, 22) * CHAR + 48;
-    const extra = d.table.indexes.length ? 30 + d.table.indexes.length * 22 : 0;
+    const extra =
+      (d.table.indexes.length ? 30 + d.table.indexes.length * 22 : 0) + (d.partitions?.length ? 30 + d.partitions.length * 22 : 0);
     return { width: Math.min(Math.max(w, 230), 460), height: HEADER + Math.max(d.table.columns.length, 1) * ROW + extra + 8 };
   }
   if (d.kind === 'view') {

@@ -397,6 +397,7 @@ code, pre { font-family: var(--font-mono); }
 .foot-item .ic { width: 12px; height: 12px; }
 .foot-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .foot-text em { color: var(--faint); font-style: normal; }
+.node-foot:not(:last-child) { border-radius: 0; }
 
 .react-flow__handle.h { width: 6px; height: 6px; min-width: 0; min-height: 0; border: 0; background: transparent; pointer-events: none; }
 
